@@ -2194,6 +2194,41 @@
         }
 
         // ========================================
+        // デバッグ（?debug=1 で有効）
+        // ========================================
+        if (new URLSearchParams(location.search).get('debug') === '1') {
+            window.debug = {
+                setDepth(n) {
+                    n = Math.max(1, Math.floor(n));
+                    state.depth = n;
+                    state.depthProgress = 0;
+                    updateDisplay();
+                    console.log('深度を', n, 'に設定');
+                },
+                spawnBoss() {
+                    if (state.boss.active) { console.log('既にボス戦中'); return; }
+                    const depth = state.depth % 10 === 0 ? state.depth : Math.ceil(state.depth / 10) * 10;
+                    startBoss(depth);
+                    console.log('深度', depth, 'のボスを出現させました');
+                },
+                addGems(n) {
+                    n = Math.floor(n || 10000);
+                    state.resources += n;
+                    state.totalResources += n;
+                    updateDisplay();
+                    console.log('+' + n + ' gems');
+                },
+                killAll() {
+                    [...state.field.ores].forEach(o => breakOre(o));
+                    console.log('全鉱石を破壊');
+                },
+                getState() { return state; }
+            };
+            console.log('%c[DEBUG MODE] window.debug で操作可能', 'color:#4ecca3;font-weight:bold');
+            console.log('  .setDepth(n)  .spawnBoss()  .addGems(n)  .killAll()  .getState()');
+        }
+
+        // ========================================
         // 初期化
         // ========================================
         function init() {
