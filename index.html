@@ -200,6 +200,47 @@
             100% { transform: scale(1.2); opacity: 1; }
         }
 
+        /* --- ボス --- */
+        .ore-entity.boss-ore {
+            width: 96px;
+            height: 96px;
+        }
+        .ore-entity.boss-ore .ore-sprite {
+            width: 64px;
+            height: 64px;
+        }
+        .ore-entity.boss-ore .ore-hp-bar {
+            width: 64px;
+            height: 6px;
+        }
+        .ore-entity.boss-ore .ore-hp-fill {
+            background: linear-gradient(90deg, #ff0040, #ff4060);
+        }
+        .ore-entity.boss-ore .ore-name {
+            font-size: 11px;
+            color: #ff4060;
+            font-weight: bold;
+        }
+        .ore-entity.boss-ore.focused::before {
+            border-color: rgba(255, 0, 64, 0.8);
+        }
+        .boss-indicator {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(180deg, #cc0033, #990022);
+            color: #fff;
+            font-weight: bold;
+            font-size: 14px;
+            padding: 3px 14px;
+            border-radius: 4px;
+            border: 1px solid #ff4060;
+            text-shadow: 0 0 6px #ff0040;
+            z-index: 10;
+            pointer-events: none;
+        }
+
         .damage-popup {
             position: absolute;
             font-weight: bold;
@@ -574,6 +615,7 @@
             </div>
             <div class="stat">DPS: <span class="stat-value" id="dps-display">0</span>/s</div>
             <div class="stat">PWR: <span class="stat-value" id="power-display">1</span></div>
+            <div class="stat">深度:<span class="stat-value" id="depth-display">1</span></div>
             <div class="combo-display" id="combo-display"></div>
         </div>
 
@@ -771,6 +813,30 @@
         ];
 
         // ========================================
+        // ボスデータ
+        // ========================================
+        const BOSS_DATA = [
+            { id: 'boss_10', name: '岩の守護者', depth: 10, hp: 200, reward: 500, sprite: 'stone' },
+            { id: 'boss_20', name: '銅の巨人', depth: 20, hp: 1000, reward: 2500, sprite: 'copper' },
+            { id: 'boss_30', name: '鋼鉄の番人', depth: 30, hp: 5000, reward: 12000, sprite: 'iron' },
+            { id: 'boss_40', name: 'クリスタルドラゴン', depth: 40, hp: 25000, reward: 50000, sprite: 'crystal' },
+            { id: 'boss_50', name: 'ダイヤの魔王', depth: 50, hp: 120000, reward: 200000, sprite: 'diamond' }
+        ];
+
+        function getBossForDepth(depth) {
+            const defined = BOSS_DATA.find(b => b.depth === depth);
+            if (defined) return defined;
+            return {
+                id: 'boss_' + depth,
+                name: '深度' + depth + 'の番人',
+                depth: depth,
+                hp: Math.floor(200 * Math.pow(5, (depth - 10) / 10)),
+                reward: Math.floor(500 * Math.pow(5, (depth - 10) / 10)),
+                sprite: 'stone'
+            };
+        }
+
+        // ========================================
         // ゲーム状態
         // ========================================
         const state = {
@@ -813,6 +879,18 @@
                 maxDamage: 0,
                 totalResourcesGained: 0,
                 oreBroken: {}
+            },
+
+            // 深度
+            depth: 1,
+            depthProgress: 0,
+            depthTarget: 10,
+
+            // ボス
+            boss: {
+                active: false,
+                current: null,
+                defeated: {}
             },
 
             // 転生データ
@@ -916,8 +994,10 @@
             let best = null;
             let bestRatio = Infinity;
             state.field.ores.forEach(ore => {
-                const oreType = oreTypes[ore.typeIndex];
-                const ratio = ore.hp / oreType.maxHp;
+                // ボスは最優先ターゲット
+                if (ore.isBoss) { best = ore; bestRatio = -1; return; }
+                const ot = getOreType(ore);
+                const ratio = ore.hp / ot.maxHp;
                 if (ratio < bestRatio) {
                     bestRatio = ratio;
                     best = ore;
@@ -961,9 +1041,105 @@
         }
 
         // ========================================
+        // ボス・深度システム
+        // ========================================
+        function getOreType(ore) {
+            if (ore.isBoss) return ore.bossType;
+            return oreTypes[ore.typeIndex];
+        }
+
+        function getDepthTarget() {
+            return 10;
+        }
+
+        function advanceDepthProgress() {
+            if (state.boss.active) return;
+            state.depthProgress++;
+            if (state.depthProgress >= state.depthTarget) {
+                state.depth++;
+                state.depthProgress = 0;
+                state.depthTarget = getDepthTarget();
+                if (state.depth % 10 === 0) {
+                    startBoss(state.depth);
+                }
+            }
+        }
+
+        function startBoss(depth) {
+            const bossData = getBossForDepth(depth);
+            state.boss.active = true;
+            state.boss.current = bossData;
+
+            // フィールドクリア
+            state.field.ores.forEach(o => {
+                const el = document.getElementById(o.id);
+                if (el) el.remove();
+            });
+            state.field.ores = [];
+            state.focusTargetId = null;
+
+            // ボスをスポーン
+            const field = document.getElementById('mine-field');
+            const rect = field.getBoundingClientRect();
+
+            const bossType = {
+                id: bossData.id,
+                name: bossData.name,
+                sprite: bossData.sprite,
+                maxHp: bossData.hp,
+                reward: bossData.reward,
+                exp: Math.floor(bossData.reward * 0.5),
+                isRare: false
+            };
+
+            const ore = {
+                id: 'boss-' + (nextOreId++),
+                typeIndex: -1,
+                hp: bossData.hp,
+                x: Math.max(0, rect.width / 2 - 48),
+                y: Math.max(0, rect.height / 2 - 48),
+                isBoss: true,
+                bossType: bossType,
+                isRareVariant: false
+            };
+
+            state.field.ores.push(ore);
+            renderOre(ore);
+            setFocusTarget(ore.id);
+
+            // ボスインジケーター表示
+            const indicator = document.createElement('div');
+            indicator.className = 'boss-indicator';
+            indicator.id = 'boss-indicator';
+            indicator.textContent = '⚔ BOSS ⚔';
+            field.appendChild(indicator);
+        }
+
+        function defeatBoss(ore) {
+            const bossData = state.boss.current;
+            state.boss.defeated[bossData.id] = true;
+            // dex用フック（後タスクで実装）
+            onBossDefeated(bossData.id);
+            endBoss();
+        }
+
+        function endBoss() {
+            state.boss.active = false;
+            state.boss.current = null;
+            const indicator = document.getElementById('boss-indicator');
+            if (indicator) indicator.remove();
+        }
+
+        function onBossDefeated(bossId) {
+            // TODO: 図鑑（dex）登録処理をここに追加
+            console.log('ボス撃破:', bossId);
+        }
+
+        // ========================================
         // 鉱石システム
         // ========================================
         function spawnOre() {
+            if (state.boss.active) return;
             if (state.field.ores.length >= state.field.slots) return;
 
             const oreType = selectOreType();
@@ -1032,11 +1208,12 @@
 
         function renderOre(ore) {
             const field = document.getElementById('mine-field');
-            const oreType = oreTypes[ore.typeIndex];
+            const oreType = getOreType(ore);
 
             const el = document.createElement('div');
             let oreClass = 'ore-entity';
-            if (ore.isRareVariant) oreClass += ' rare-variant';
+            if (ore.isBoss) oreClass += ' boss-ore';
+            else if (ore.isRareVariant) oreClass += ' rare-variant';
             else if (oreType.isRare) oreClass += ' rare-type';
             el.className = oreClass;
             el.id = ore.id;
@@ -1063,14 +1240,14 @@
         function updateOreDisplay(ore) {
             const el = document.getElementById(ore.id);
             if (!el) return;
-            const oreType = oreTypes[ore.typeIndex];
+            const oreType = getOreType(ore);
             const hpPercent = Math.max(0, (ore.hp / oreType.maxHp) * 100);
             const fill = el.querySelector('.ore-hp-fill');
             if (fill) fill.style.width = hpPercent + '%';
         }
 
         function breakOre(ore) {
-            const oreType = oreTypes[ore.typeIndex];
+            const oreType = getOreType(ore);
 
             // 報酬（レアバリアントは10倍、資源ボーナス適用）
             const comboBonus = 1 + getComboBonus();
@@ -1122,11 +1299,17 @@
                 selectNextFocusTarget();
             }
 
-            // フィールド拡張チェック
-            checkSlotUnlock();
-
-            // 新しい鉱石を追加
-            setTimeout(() => spawnOre(), 300);
+            if (ore.isBoss) {
+                // ボス撃破処理
+                defeatBoss(ore);
+            } else {
+                // 深度進行
+                advanceDepthProgress();
+                // フィールド拡張チェック
+                checkSlotUnlock();
+                // 新しい鉱石を追加
+                setTimeout(() => spawnOre(), 300);
+            }
         }
 
         function checkSlotUnlock() {
@@ -1438,6 +1621,11 @@
             state.combo = 0;
             state.lastBreakTime = 0;
             state.focusTargetId = null;
+            state.depth = 1;
+            state.depthProgress = 0;
+            state.depthTarget = 10;
+            state.boss.active = false;
+            state.boss.current = null;
             state.field.slots = 4;
             state.field.ores = [];
             buildings.forEach(b => state.buildings[b.id] = 0);
@@ -1591,6 +1779,9 @@
             document.getElementById('dps-display').textContent = fmt(getTotalDps());
             document.getElementById('power-display').textContent = fmt(getClickDamage());
 
+            // 深度
+            document.getElementById('depth-display').textContent = state.depth;
+
             // コンボ
             const comboEl = document.getElementById('combo-display');
             if (state.combo >= 5) {
@@ -1736,6 +1927,10 @@
                         buildings: state.buildings,
                         upgrades: state.upgrades,
                         stats: state.stats,
+                        depth: state.depth,
+                        depthProgress: state.depthProgress,
+                        depthTarget: state.depthTarget,
+                        bossDefeated: state.boss.defeated,
                         prestige: state.prestige
                     }
                 };
@@ -1769,6 +1964,10 @@
                     if (!state.stats.maxDamage) state.stats.maxDamage = 0;
                     if (!state.stats.totalResourcesGained) state.stats.totalResourcesGained = 0;
                 }
+                if (s.depth) state.depth = s.depth;
+                if (s.depthProgress != null) state.depthProgress = s.depthProgress;
+                if (s.depthTarget) state.depthTarget = s.depthTarget;
+                if (s.bossDefeated) state.boss.defeated = s.bossDefeated;
                 if (s.prestige) Object.assign(state.prestige, s.prestige);
                 if (!state.prestige.skills) state.prestige.skills = {};
 
@@ -1910,8 +2109,8 @@
                 lastPickaxeTime = now;
             }
 
-            // 鉱石補充
-            while (state.field.ores.length < state.field.slots) {
+            // 鉱石補充（ボス中は停止）
+            while (!state.boss.active && state.field.ores.length < state.field.slots) {
                 spawnOre();
             }
 
