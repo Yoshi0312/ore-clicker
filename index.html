@@ -1,0 +1,1919 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0a0a1a">
+    <title>Ore Breaker Incremental</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0a1a;
+            color: #eee;
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            user-select: none;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* === レイアウト === */
+        .game-container {
+            display: grid;
+            grid-template-rows: 40px 1fr 50px;
+            width: 100%;
+            height: 100%;
+            height: 100dvh;
+        }
+
+        /* --- トップバー --- */
+        .top-bar {
+            background: linear-gradient(180deg, #1a1a3e 0%, #0f0f2e 100%);
+            border-bottom: 2px solid #333;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            gap: 20px;
+            font-size: 13px;
+        }
+        .top-bar .stat {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .top-bar .stat-value { color: #ffd700; font-weight: bold; }
+        .top-bar .exp-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .top-bar .exp-bar {
+            width: 80px;
+            height: 8px;
+            background: rgba(0,0,0,0.5);
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid #555;
+        }
+        .top-bar .exp-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4ecca3, #38d9a9);
+            transition: width 0.2s;
+        }
+        .top-bar .exp-text {
+            font-size: 10px;
+            color: #888;
+        }
+        .top-bar .combo-display {
+            margin-left: auto;
+            font-weight: bold;
+            font-size: 14px;
+            text-shadow: 0 0 8px currentColor;
+        }
+
+        /* --- メインエリア --- */
+        .main-area {
+            display: grid;
+            grid-template-columns: 1fr 260px;
+            overflow: hidden;
+        }
+
+        /* --- 鉱山フィールド --- */
+        .mine-field {
+            position: relative;
+            background:
+                radial-gradient(ellipse at 50% 30%, #3e2723 0%, transparent 70%),
+                repeating-linear-gradient(90deg, transparent, transparent 20px, rgba(0,0,0,0.05) 20px, rgba(0,0,0,0.05) 21px),
+                repeating-linear-gradient(0deg, transparent, transparent 20px, rgba(0,0,0,0.05) 20px, rgba(0,0,0,0.05) 21px),
+                linear-gradient(180deg, #2d1b0e 0%, #1a0f05 60%, #0d0805 100%);
+            border-right: 3px solid #333;
+            overflow: hidden;
+            touch-action: none;
+        }
+        .mine-field::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border: 8px solid transparent;
+            border-image: repeating-linear-gradient(45deg, #4a3728, #2a1a0e 10px) 8;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .ore-entity {
+            position: absolute;
+            width: 64px;
+            height: 64px;
+            cursor: pointer;
+            transition: transform 0.1s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .ore-entity:hover { transform: scale(1.15); z-index: 10; }
+        .ore-entity:active { transform: scale(0.9); }
+        .ore-entity .ore-sprite {
+            width: 48px;
+            height: 48px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            image-rendering: pixelated;
+        }
+        .ore-entity.focused {
+            z-index: 10;
+        }
+        .ore-entity.focused::before {
+            content: '';
+            position: absolute;
+            inset: -6px;
+            border: 2px solid rgba(78, 204, 163, 0.8);
+            border-radius: 10px;
+            animation: focusPulse 1s infinite alternate;
+            pointer-events: none;
+        }
+        @keyframes focusPulse {
+            0% { box-shadow: 0 0 5px rgba(78,204,163,0.3); border-color: rgba(78,204,163,0.6); }
+            100% { box-shadow: 0 0 15px rgba(78,204,163,0.7); border-color: rgba(78,204,163,1); }
+        }
+        .pickaxe-anim {
+            position: absolute;
+            font-size: 16px;
+            pointer-events: none;
+            z-index: 50;
+            animation: pickaxeFly 0.6s ease-in forwards;
+        }
+        @keyframes pickaxeFly {
+            0% { opacity: 1; transform: translate(0, 0) scale(1); }
+            80% { opacity: 1; transform: translate(var(--tx), var(--ty)) scale(0.8); }
+            100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0.5); }
+        }
+        .ore-entity .ore-hp-bar {
+            width: 48px;
+            height: 4px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 2px;
+            margin-top: 2px;
+            overflow: hidden;
+        }
+        .ore-entity .ore-hp-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e74c3c, #f39c12);
+            transition: width 0.15s;
+        }
+        .ore-entity .ore-name {
+            font-size: 9px;
+            color: #fff;
+            text-shadow: 1px 1px 2px #000;
+            margin-top: 1px;
+        }
+        .ore-entity.rare-type .ore-name { color: #ffd700; }
+        .ore-entity.rare-type::after {
+            content: ''; position: absolute; inset: -4px;
+            border: 2px solid rgba(255, 215, 0, 0.5);
+            border-radius: 8px;
+            animation: rareGlow 1.5s infinite alternate;
+        }
+        @keyframes rareGlow {
+            0% { box-shadow: 0 0 5px rgba(255,215,0,0.3); }
+            100% { box-shadow: 0 0 15px rgba(255,215,0,0.7); }
+        }
+        .ore-entity.rare-variant .ore-name { color: #ff69b4; }
+        .ore-entity.rare-variant::after {
+            content: '✨'; position: absolute; top: -8px; right: -8px;
+            font-size: 14px;
+            animation: sparkle 0.8s infinite alternate;
+        }
+        .ore-entity.rare-variant .ore-sprite {
+            filter: brightness(1.3) saturate(1.5);
+        }
+        @keyframes sparkle {
+            0% { transform: scale(0.8); opacity: 0.7; }
+            100% { transform: scale(1.2); opacity: 1; }
+        }
+
+        .damage-popup {
+            position: absolute;
+            font-weight: bold;
+            font-size: 14px;
+            color: #ffeb3b;
+            text-shadow: 1px 1px 3px #000;
+            pointer-events: none;
+            animation: damageFloat 0.7s ease-out forwards;
+            z-index: 100;
+        }
+        .damage-popup.crit {
+            font-size: 20px;
+            color: #ff5722;
+        }
+        .reward-popup {
+            position: absolute;
+            font-weight: bold;
+            font-size: 15px;
+            color: #4ecca3;
+            text-shadow: 1px 1px 3px #000, 0 0 6px rgba(78,204,163,0.5);
+            pointer-events: none;
+            animation: rewardFloat 1s ease-out forwards;
+            z-index: 100;
+        }
+        .reward-popup.rare-reward {
+            font-size: 18px;
+            color: #ff69b4;
+            text-shadow: 1px 1px 3px #000, 0 0 8px rgba(255,105,180,0.5);
+        }
+        @keyframes rewardFloat {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            50% { opacity: 1; transform: translateY(-20px) scale(1.1); }
+            100% { opacity: 0; transform: translateY(-45px) scale(0.9); }
+        }
+        @keyframes damageFloat {
+            0% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-40px); }
+        }
+
+        /* --- 右サイドバー --- */
+        .sidebar {
+            background: linear-gradient(180deg, #1a1a2e 0%, #12121e 100%);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .sidebar-header {
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #aaa;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        .sidebar-header:hover { background: rgba(255,255,255,0.05); }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px;
+        }
+        .sidebar-content::-webkit-scrollbar { width: 4px; }
+        .sidebar-content::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+
+        .building-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-bottom: 1px solid #222;
+            cursor: pointer;
+            transition: background 0.15s;
+            position: relative;
+        }
+        .building-item:hover { background: rgba(255,255,255,0.05); }
+        .building-item.can-afford { background: rgba(76, 175, 80, 0.1); }
+        .building-item.not-afford .building-cost { color: #888; }
+        .building-item.locked { opacity: 0.4; cursor: default; }
+        .building-item .building-sprite {
+            width: 36px;
+            height: 36px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            image-rendering: pixelated;
+            flex-shrink: 0;
+        }
+        .building-item .building-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .building-item .building-name {
+            font-size: 11px;
+            font-weight: bold;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .building-item .building-detail {
+            font-size: 10px;
+            color: #888;
+        }
+        .building-item .building-cost {
+            font-size: 11px;
+            color: #ffd700;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        .building-item .building-count {
+            position: absolute;
+            top: 4px;
+            right: 8px;
+            font-size: 10px;
+            color: #4ecca3;
+            font-weight: bold;
+        }
+
+        /* タブ切り替え */
+        .sidebar-tabs {
+            display: flex;
+            border-bottom: 1px solid #333;
+        }
+        .sidebar-tab {
+            flex: 1;
+            padding: 6px 4px;
+            text-align: center;
+            font-size: 11px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: #888;
+            transition: all 0.2s;
+        }
+        .sidebar-tab.active { color: #ffd700; border-bottom-color: #ffd700; }
+        .sidebar-tab:hover { color: #fff; }
+
+        /* --- ボトムバー --- */
+        .bottom-bar {
+            background: linear-gradient(0deg, #1a1a3e 0%, #0f0f2e 100%);
+            border-top: 2px solid #333;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            gap: 6px;
+        }
+        .skill-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            border: 2px solid #444;
+            background: #1a1a2e;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            position: relative;
+            transition: all 0.15s;
+        }
+        .skill-btn:hover:not(.locked) { border-color: #ffd700; transform: translateY(-2px); }
+        .skill-btn.ready { border-color: #4ecca3; box-shadow: 0 0 8px rgba(78,204,163,0.3); }
+        .skill-btn.active { border-color: #ffd700; background: #2a2a4e; animation: skillPulse 0.5s infinite alternate; }
+        .skill-btn.locked { opacity: 0.3; cursor: default; }
+        .skill-btn.cooldown { opacity: 0.6; }
+        .skill-btn .cd-overlay {
+            position: absolute; inset: 0;
+            background: rgba(0,0,0,0.6);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #fff;
+        }
+        @keyframes skillPulse {
+            0% { box-shadow: 0 0 5px rgba(255,215,0,0.3); }
+            100% { box-shadow: 0 0 15px rgba(255,215,0,0.7); }
+        }
+
+        .menu-buttons {
+            margin-left: auto;
+            display: flex;
+            gap: 4px;
+        }
+        .menu-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background: #1a1a2e;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+        .menu-btn:hover { border-color: #888; color: #fff; }
+
+        /* --- モーダル --- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: #1a1a2e;
+            border: 2px solid #444;
+            border-radius: 12px;
+            padding: 20px;
+            min-width: 300px;
+            max-width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+        }
+        .modal h3 { font-size: 16px; margin-bottom: 12px; color: #ffd700; }
+        .modal p { font-size: 13px; color: #ccc; margin-bottom: 8px; }
+        .modal-close {
+            float: right;
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .modal-close:hover { color: #fff; }
+
+        .modal-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: #4ecca3;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+        .modal-btn:hover { background: #3dbb92; }
+        .modal-btn:disabled { background: #555; color: #888; cursor: default; }
+
+        /* レベルアップ演出 */
+        .levelup-toast {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            background: linear-gradient(135deg, #ffd700, #ff8c00);
+            color: #000;
+            padding: 15px 30px;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 2000;
+            animation: toastIn 1.2s ease-out forwards;
+            box-shadow: 0 0 30px rgba(255,215,0,0.5);
+        }
+        @keyframes toastIn {
+            0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+            30% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+            50% { transform: translate(-50%, -50%) scale(1); }
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+        }
+
+        /* ツールチップ */
+        .tooltip-box {
+            position: fixed;
+            background: rgba(10,10,30,0.95);
+            border: 1px solid #555;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 11px;
+            color: #eee;
+            z-index: 500;
+            pointer-events: none;
+            max-width: 200px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            display: none;
+        }
+
+        /* === モバイル対応 === */
+        @media (max-width: 768px) {
+            .game-container {
+                grid-template-rows: 36px 1fr 44px;
+            }
+            .top-bar {
+                padding: 0 8px;
+                gap: 8px;
+                font-size: 11px;
+                overflow-x: auto;
+            }
+            .top-bar .exp-bar { width: 50px; }
+            .main-area {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 180px;
+            }
+            .mine-field {
+                border-right: none;
+                border-bottom: 2px solid #333;
+            }
+            .sidebar {
+                border-top: 2px solid #444;
+            }
+            .ore-entity {
+                width: 56px;
+                height: 56px;
+            }
+            .ore-entity .ore-sprite {
+                width: 40px;
+                height: 40px;
+            }
+            .building-item {
+                padding: 8px;
+                min-height: 44px;
+            }
+            .skill-btn {
+                width: 36px;
+                height: 36px;
+                font-size: 16px;
+            }
+            .modal {
+                min-width: unset;
+                max-width: 90vw;
+                max-height: 70vh;
+                margin: 10px;
+            }
+            .combo-display { font-size: 12px !important; }
+        }
+
+        @media (max-width: 400px) {
+            .top-bar { font-size: 10px; gap: 6px; }
+            .top-bar .exp-bar { width: 40px; }
+            .top-bar .stat-value { font-size: 11px; }
+            .ore-entity {
+                width: 48px;
+                height: 48px;
+            }
+            .ore-entity .ore-sprite {
+                width: 36px;
+                height: 36px;
+            }
+            .ore-entity .ore-name { font-size: 8px; }
+        }
+
+        /* iOS safe area対応 */
+        @supports (padding-bottom: env(safe-area-inset-bottom)) {
+            .bottom-bar {
+                padding-bottom: env(safe-area-inset-bottom);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <!-- トップバー -->
+        <div class="top-bar">
+            <div class="stat">💎 <span class="stat-value" id="res-display">0</span></div>
+            <div class="stat">⚡ <span class="stat-value" id="energy-display">0/100</span></div>
+            <div class="stat">Lv.<span class="stat-value" id="level-display">1</span></div>
+            <div class="exp-wrapper">
+                <div class="exp-bar"><div class="exp-fill" id="exp-fill" style="width:0%"></div></div>
+                <span class="exp-text" id="exp-text">0/10</span>
+            </div>
+            <div class="stat">DPS: <span class="stat-value" id="dps-display">0</span>/s</div>
+            <div class="stat">PWR: <span class="stat-value" id="power-display">1</span></div>
+            <div class="combo-display" id="combo-display"></div>
+        </div>
+
+        <!-- メインエリア -->
+        <div class="main-area">
+            <!-- 鉱山フィールド -->
+            <div class="mine-field" id="mine-field" onclick="handleFieldClick(event)">
+                <!-- 鉱石がJS側で動的に配置される -->
+            </div>
+
+            <!-- 右サイドバー -->
+            <div class="sidebar">
+                <div class="sidebar-tabs">
+                    <div class="sidebar-tab active" onclick="switchTab('buildings', this)">施設</div>
+                    <div class="sidebar-tab" onclick="switchTab('upgrades', this)">強化</div>
+                    <div class="sidebar-tab" onclick="switchTab('ore_upgrades', this)">鉱石</div>
+                </div>
+                <div class="sidebar-content" id="sidebar-content">
+                    <!-- 施設/アップグレードリスト -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ボトムバー -->
+        <div class="bottom-bar">
+            <div id="skill-buttons">
+                <!-- スキルボタンがJSで生成される -->
+            </div>
+            <div class="menu-buttons">
+                <button class="menu-btn" onclick="saveGame()" title="セーブ">💾</button>
+                <button class="menu-btn" onclick="showModal('stats')" title="統計">📊</button>
+                <button class="menu-btn" onclick="showModal('prestige')" title="転生">🔄</button>
+                <button class="menu-btn" onclick="showModal('settings')" title="設定">⚙</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- モーダル -->
+    <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+        <div class="modal" id="modal-content" onclick="event.stopPropagation()">
+        </div>
+    </div>
+
+    <!-- ツールチップ -->
+    <div class="tooltip-box" id="tooltip-box"></div>
+
+    <script>
+        // ========================================
+        // 個別画像パス定義
+        // ========================================
+        const SPRITE_IMAGES = {
+            player:       'output/character_girl1.png',
+            // 鉱石 (14種)
+            stone:        'output/stone1.png',
+            copper:       'output/copper.png',
+            iron:         'output/iron.png',
+            coal:         'output/coal.png',
+            silver:       'output/silver.png',
+            gold:         'output/gold.png',
+            aluminum:     'output/aluminum1.png',
+            crystal:      'output/crystal.png',
+            diamond:      'output/diamond.png',
+            meteorite:    'output/meteorite.png',
+            mithril:      'output/mithril.png',
+            orichalcum:   'output/orichalcum1.png',
+            darkmatter:   'output/dark_matter.png',
+            philosopher:  'output/philosophers_stone.png',
+            // 施設 (10種)
+            cursor:       'output/auto_clicker.png',
+            apprentice:   'output/apprentice_miner.png',
+            miner:        'output/expert_miner.png',
+            drill:        'output/rock_drill.png',
+            excavator:    'output/excavator.png',
+            mineshaft:    'output/mine.png',
+            golem:        'output/mining_golem.png',
+            dwarf_guild:  'output/dwarf_guild.png',
+            portal:       'output/dimensional_mining_portal.png',
+            singularity:  'output/singularity_miner.png'
+        };
+
+        function getSpriteStyle(spriteId) {
+            const path = SPRITE_IMAGES[spriteId];
+            if (!path) return '';
+            return `background-image: url('${path}');`;
+        }
+
+        // ========================================
+        // 数値フォーマット
+        // ========================================
+        const SUFFIXES = ["", "K", "M", "B", "T", "Qa"];
+        function fmt(num) {
+            if (num < 1) return num > 0 ? num.toFixed(1) : '0';
+            if (num < 1000) return Math.floor(num).toString();
+            const exp = Math.floor(Math.log10(num) / 3);
+            const suffix = SUFFIXES[Math.min(exp, SUFFIXES.length - 1)];
+            const scaled = num / Math.pow(1000, exp);
+            return scaled.toFixed(exp >= 2 ? 2 : 1) + suffix;
+        }
+
+        // ========================================
+        // ゲームデータ定義
+        // ========================================
+        const oreTypes = [
+            { id: 'stone', name: '石', sprite: 'stone', maxHp: 3, reward: 1, exp: 1, unlockAt: 0, isRare: false },
+            { id: 'coal', name: '石炭', sprite: 'coal', maxHp: 5, reward: 2, exp: 1, unlockAt: 50, isRare: false, special: 'energy' },
+            { id: 'copper', name: '銅鉱石', sprite: 'copper', maxHp: 8, reward: 3, exp: 2, unlockAt: 20, isRare: false },
+            { id: 'iron', name: '鉄鉱石', sprite: 'iron', maxHp: 15, reward: 6, exp: 4, unlockAt: 100, isRare: false },
+            { id: 'silver', name: '銀鉱石', sprite: 'silver', maxHp: 10, reward: 15, exp: 8, unlockAt: 100, isRare: true, rareChance: 0.08 },
+            { id: 'gold', name: '金鉱石', sprite: 'gold', maxHp: 20, reward: 30, exp: 15, unlockAt: 500, isRare: true, rareChance: 0.05 },
+            { id: 'aluminum', name: 'アルミ', sprite: 'aluminum', maxHp: 25, reward: 12, exp: 8, unlockAt: 800, isRare: false },
+            { id: 'crystal', name: '水晶', sprite: 'crystal', maxHp: 35, reward: 25, exp: 18, unlockAt: 2000, isRare: false },
+            { id: 'diamond', name: 'ダイヤ', sprite: 'diamond', maxHp: 80, reward: 100, exp: 60, unlockAt: 10000, isRare: false },
+            { id: 'meteorite', name: '隕石', sprite: 'meteorite', maxHp: 60, reward: 200, exp: 120, unlockAt: 25000, isRare: true, rareChance: 0.02 },
+            { id: 'mithril', name: 'ミスリル', sprite: 'mithril', maxHp: 120, reward: 180, exp: 100, unlockAt: 50000, isRare: false },
+            { id: 'orichalcum', name: 'オリハルコン', sprite: 'orichalcum', maxHp: 200, reward: 400, exp: 250, unlockAt: 100000, isRare: false },
+            { id: 'darkmatter', name: 'ダークマター', sprite: 'darkmatter', maxHp: 500, reward: 1500, exp: 800, unlockAt: 300000, isRare: true, rareChance: 0.01 },
+            { id: 'philosopher', name: '賢者の石', sprite: 'philosopher', maxHp: 1000, reward: 5000, exp: 3000, unlockAt: 1000000, isRare: true, rareChance: 0.005 }
+        ];
+
+        const buildings = [
+            { id: 'cursor', name: '自動クリッカー', sprite: 'cursor', baseCost: 15, baseDps: 0.5, unlockAt: 0, desc: '自動でクリック' },
+            { id: 'apprentice', name: '見習い鉱夫', sprite: 'apprentice', baseCost: 100, baseDps: 1, unlockAt: 50, desc: '若い鉱夫' },
+            { id: 'miner', name: '熟練鉱夫', sprite: 'miner', baseCost: 1100, baseDps: 8, unlockAt: 500, desc: 'プロの鉱夫' },
+            { id: 'drill', name: '削岩機', sprite: 'drill', baseCost: 12000, baseDps: 47, unlockAt: 5000, desc: '機械式ドリル' },
+            { id: 'excavator', name: '掘削機', sprite: 'excavator', baseCost: 130000, baseDps: 260, unlockAt: 50000, desc: '大型採掘機械' },
+            { id: 'mineshaft', name: '採掘坑', sprite: 'mineshaft', baseCost: 1400000, baseDps: 1400, unlockAt: 500000, desc: '地下坑道' },
+            { id: 'dwarf_guild', name: 'ドワーフギルド', sprite: 'dwarf_guild', baseCost: 20000000, baseDps: 7800, unlockAt: 5000000, desc: '伝説の鉱夫集団' },
+            { id: 'golem', name: '採掘ゴーレム', sprite: 'golem', baseCost: 330000000, baseDps: 44000, unlockAt: 50000000, desc: '魔法の巨人' },
+            { id: 'portal', name: '異次元ポータル', sprite: 'portal', baseCost: 5100000000, baseDps: 260000, unlockAt: 500000000, desc: '別次元から採掘' },
+            { id: 'singularity', name: '特異点採掘機', sprite: 'singularity', baseCost: 75000000000, baseDps: 1600000, unlockAt: 5000000000, desc: 'ブラックホール' }
+        ];
+
+        // 強化（レベル制）
+        const attackUpgrades = [
+            { id: 'click_power', name: 'クリック強化', emoji: '👊', desc: 'クリック +{val}', baseCost: 50, costMult: 1.5, valuePerLv: 1, unlockAt: 0 },
+            { id: 'crit_chance', name: 'クリティカル率', emoji: '🎯', desc: 'クリ率 +{val}%', baseCost: 500, costMult: 2.0, valuePerLv: 2, maxLevel: 25, unlockAt: 200 },
+            { id: 'crit_mult', name: 'クリティカル倍率', emoji: '💥', desc: 'クリ倍率 +{val}', baseCost: 3000, costMult: 2.5, valuePerLv: 0.5, unlockAt: 2000 },
+            { id: 'energy_cap', name: 'エネルギー容量', emoji: '🔋', desc: '最大エネルギー +{val}', baseCost: 200, costMult: 1.8, valuePerLv: 20, unlockAt: 100 }
+        ];
+
+        // 鉱石強化（レベル制）
+        const oreUpgrades = [
+            { id: 'ore_slots', name: '出現数アップ', emoji: '⬆️', desc: '鉱石出現数 +{val}', baseCost: 300, costMult: 3.0, valuePerLv: 1, maxLevel: 8, unlockAt: 100 },
+            { id: 'rare_chance', name: 'レア出現率', emoji: '✨', desc: 'レア率 +{val}%', baseCost: 1000, costMult: 2.5, valuePerLv: 1, maxLevel: 15, unlockAt: 500 },
+            { id: 'high_tier', name: '高価値鉱石率', emoji: '💎', desc: '高ランク出現 +{val}%', baseCost: 800, costMult: 2.2, valuePerLv: 5, unlockAt: 300 },
+            { id: 'reward_bonus', name: '資源ボーナス', emoji: '💰', desc: '獲得資源 +{val}%', baseCost: 500, costMult: 2.0, valuePerLv: 10, unlockAt: 150 }
+        ];
+
+        const skillTypes = [
+            { id: 'multi_strike', name: '連撃', emoji: '⚔️', desc: '5秒間クリック2倍', energyCost: 30, cooldown: 20000, duration: 5000, unlockAt: 100 },
+            { id: 'shatter', name: '粉砕', emoji: '💥', desc: '全鉱石にHP25%ダメージ', energyCost: 50, cooldown: 30000, duration: 0, unlockAt: 500 },
+            { id: 'golden_eye', name: '黄金の目', emoji: '👁️', desc: '15秒間レア率3倍', energyCost: 40, cooldown: 60000, duration: 15000, unlockAt: 2000 },
+            { id: 'frenzy', name: '採掘狂乱', emoji: '🔥', desc: '10秒間DPS5倍', energyCost: 80, cooldown: 120000, duration: 10000, unlockAt: 10000 },
+            { id: 'instant_kill', name: '一撃必殺', emoji: '⚡', desc: '1つの鉱石を即破壊', energyCost: 60, cooldown: 90000, duration: 0, unlockAt: 5000 }
+        ];
+
+        // 転生スキル定義
+        const prestigeSkills = [
+            { id: 'p_click', name: 'クリック力永続UP', desc: 'クリック力 +{val}', costBase: 1, costMult: 1.5, valuePerLv: 2, emoji: '👊' },
+            { id: 'p_dps', name: 'DPS倍率UP', desc: 'DPS +{val}%', costBase: 2, costMult: 2.0, valuePerLv: 10, emoji: '⚡' },
+            { id: 'p_crit', name: 'クリ率永続UP', desc: 'クリ率 +{val}%', costBase: 3, costMult: 2.5, valuePerLv: 3, maxLevel: 10, emoji: '🎯' },
+            { id: 'p_reward', name: '報酬倍率UP', desc: '報酬 +{val}%', costBase: 2, costMult: 2.0, valuePerLv: 15, emoji: '💰' },
+            { id: 'p_rare', name: 'レア率永続UP', desc: 'レア率 +{val}%', costBase: 5, costMult: 3.0, valuePerLv: 2, maxLevel: 10, emoji: '✨' },
+            { id: 'p_start', name: '初期資源', desc: '転生後の初期資源 +{val}', costBase: 3, costMult: 2.0, valuePerLv: 100, emoji: '🎁' }
+        ];
+
+        // ========================================
+        // ゲーム状態
+        // ========================================
+        const state = {
+            resources: 0,
+            totalResources: 0,
+            level: 1,
+            exp: 0,
+            expToNext: 10,
+            baseClickDamage: 1,
+            critChance: 0,
+            critMultiplier: 2.0,
+            energy: 100,
+            maxEnergy: 100,
+            energyRegen: 2,
+            combo: 0,
+            lastBreakTime: 0,
+            focusTargetId: null,
+
+            field: {
+                slots: 4,
+                maxSlots: 8,
+                ores: []
+            },
+
+            buildings: {},
+            upgrades: {},
+            skills: {},
+            activeEffects: {
+                multiStrike: false,
+                frenzy: false,
+                goldenEye: false,
+                rareBonus: 1,
+                dpsMultiplier: 1
+            },
+
+            stats: {
+                totalClicks: 0,
+                totalBroken: 0,
+                maxCombo: 0,
+                maxDamage: 0,
+                totalResourcesGained: 0,
+                oreBroken: {}
+            },
+
+            // 転生データ
+            prestige: {
+                count: 0,
+                points: 0,
+                totalPoints: 0,
+                skills: {}
+            }
+        };
+
+        // 施設初期化
+        buildings.forEach(b => state.buildings[b.id] = 0);
+        skillTypes.forEach(s => state.skills[s.id] = { cooldown: 0, activeUntil: 0 });
+
+        let currentTab = 'buildings';
+        let nextOreId = 0;
+
+        // ========================================
+        // 施設コスト計算 (Cookie Clicker式)
+        // ========================================
+        function getBuildingCost(building) {
+            const owned = state.buildings[building.id];
+            return Math.ceil(building.baseCost * Math.pow(1.15, owned));
+        }
+
+        function getBuildingDps(building) {
+            const owned = state.buildings[building.id];
+            return building.baseDps * owned;
+        }
+
+        function getTotalDps() {
+            let total = 0;
+            buildings.forEach(b => { total += getBuildingDps(b); });
+            total *= state.activeEffects.dpsMultiplier;
+            total *= getPrestigeDpsMult();
+            return total;
+        }
+
+        // ========================================
+        // クリックダメージ計算
+        // ========================================
+        function getClickDamage() {
+            let dmg = state.baseClickDamage;
+            // DPSの1%をクリックに加算
+            dmg += getTotalDps() * 0.01;
+            return Math.max(1, Math.floor(dmg));
+        }
+
+        function performClick(ore) {
+            // クリックした鉱石をフォーカスターゲットに設定
+            setFocusTarget(ore.id);
+
+            let dmg = getClickDamage();
+            let isCrit = false;
+
+            // クリティカル判定
+            if (state.critChance > 0 && Math.random() * 100 < state.critChance) {
+                dmg = Math.floor(dmg * state.critMultiplier);
+                isCrit = true;
+            }
+
+            // コンボボーナス
+            const comboBonus = getComboBonus();
+            dmg = Math.floor(dmg * (1 + comboBonus));
+
+            // 連撃スキル
+            if (state.activeEffects.multiStrike) {
+                dmg *= 2;
+            }
+
+            ore.hp -= dmg;
+            state.stats.totalClicks++;
+            state.stats.maxDamage = Math.max(state.stats.maxDamage, dmg);
+            showDamagePopup(ore, dmg, isCrit);
+
+            if (ore.hp <= 0) {
+                breakOre(ore);
+            }
+            updateDisplay();
+        }
+
+        function setFocusTarget(oreId) {
+            // 前のフォーカスを解除
+            if (state.focusTargetId) {
+                const prevEl = document.getElementById(state.focusTargetId);
+                if (prevEl) prevEl.classList.remove('focused');
+            }
+            // 新しいフォーカスを設定
+            state.focusTargetId = oreId;
+            const el = document.getElementById(oreId);
+            if (el) el.classList.add('focused');
+        }
+
+        function selectNextFocusTarget() {
+            if (state.field.ores.length === 0) {
+                state.focusTargetId = null;
+                return;
+            }
+            // 最もHPが減っている鉱石（HP割合が低いもの）を選択
+            let best = null;
+            let bestRatio = Infinity;
+            state.field.ores.forEach(ore => {
+                const oreType = oreTypes[ore.typeIndex];
+                const ratio = ore.hp / oreType.maxHp;
+                if (ratio < bestRatio) {
+                    bestRatio = ratio;
+                    best = ore;
+                }
+            });
+            if (best) {
+                setFocusTarget(best.id);
+            } else {
+                state.focusTargetId = null;
+            }
+        }
+
+        function getComboBonus() {
+            if (state.combo < 5) return 0;
+            if (state.combo < 10) return 0.10;
+            if (state.combo < 20) return 0.25;
+            if (state.combo < 50) return 0.50;
+            if (state.combo < 100) return 1.00;
+            if (state.combo < 200) return 1.50;
+            return 2.00;
+        }
+
+        function getComboLabel() {
+            if (state.combo < 5) return '';
+            if (state.combo < 10) return 'COMBO!';
+            if (state.combo < 20) return 'GREAT!';
+            if (state.combo < 50) return 'EXCELLENT!';
+            if (state.combo < 100) return 'FEVER!!';
+            if (state.combo < 200) return 'SUPER FEVER!!!';
+            return 'ULTRA FEVER!!!!';
+        }
+
+        function getComboColor() {
+            if (state.combo < 5) return '#fff';
+            if (state.combo < 10) return '#4ecca3';
+            if (state.combo < 20) return '#3498db';
+            if (state.combo < 50) return '#ffc107';
+            if (state.combo < 100) return '#e74c3c';
+            if (state.combo < 200) return '#9b59b6';
+            return '#ff69b4';
+        }
+
+        // ========================================
+        // 鉱石システム
+        // ========================================
+        function spawnOre() {
+            if (state.field.ores.length >= state.field.slots) return;
+
+            const oreType = selectOreType();
+            const field = document.getElementById('mine-field');
+            const rect = field.getBoundingClientRect();
+            const padding = 40;
+
+            // ランダム位置（散らばり配置）
+            let x, y, attempts = 0;
+            do {
+                x = padding + Math.random() * (rect.width - padding * 2 - 64);
+                y = padding + Math.random() * (rect.height - padding * 2 - 64);
+                attempts++;
+            } while (attempts < 20 && isOverlapping(x, y));
+
+            // レアバリアント判定
+            const isRareVariant = Math.random() < getRareVariantChance();
+
+            const ore = {
+                id: 'ore-' + (nextOreId++),
+                typeIndex: oreType,
+                hp: oreTypes[oreType].maxHp,
+                x: x,
+                y: y,
+                isRareVariant: isRareVariant
+            };
+
+            state.field.ores.push(ore);
+            renderOre(ore);
+
+            // フォーカスターゲットがなければ自動フォーカス
+            if (!state.focusTargetId) {
+                setFocusTarget(ore.id);
+            }
+        }
+
+        function isOverlapping(x, y) {
+            return state.field.ores.some(ore => {
+                const dx = ore.x - x;
+                const dy = ore.y - y;
+                return Math.sqrt(dx * dx + dy * dy) < 70;
+            });
+        }
+
+        function selectOreType() {
+            const pool = oreTypes.filter(o => state.totalResources >= o.unlockAt);
+            const htBonus = getHighTierBonus(); // 高価値鉱石率ボーナス（%）
+            const weights = pool.map((ore, i) => {
+                let w = Math.max(100 - i * 12, 5);
+                // 高ランク鉱石の出現率ブースト
+                if (i > 0 && htBonus > 0) {
+                    w += (i * htBonus * 0.5);
+                }
+                if (ore.isRare) w = (ore.rareChance || 0.05) * 100 * state.activeEffects.rareBonus + htBonus * 0.2;
+                return w;
+            });
+
+            const total = weights.reduce((a, b) => a + b, 0);
+            let r = Math.random() * total;
+            for (let i = 0; i < pool.length; i++) {
+                r -= weights[i];
+                if (r <= 0) return oreTypes.indexOf(pool[i]);
+            }
+            return 0;
+        }
+
+        function renderOre(ore) {
+            const field = document.getElementById('mine-field');
+            const oreType = oreTypes[ore.typeIndex];
+
+            const el = document.createElement('div');
+            let oreClass = 'ore-entity';
+            if (ore.isRareVariant) oreClass += ' rare-variant';
+            else if (oreType.isRare) oreClass += ' rare-type';
+            el.className = oreClass;
+            el.id = ore.id;
+            el.style.left = ore.x + 'px';
+            el.style.top = ore.y + 'px';
+
+            const hpPercent = (ore.hp / oreType.maxHp) * 100;
+
+            const displayName = ore.isRareVariant ? '★' + oreType.name : oreType.name;
+            el.innerHTML = `
+                <div class="ore-sprite" style="${getSpriteStyle(oreType.sprite)}"></div>
+                <div class="ore-hp-bar"><div class="ore-hp-fill" style="width:${hpPercent}%"></div></div>
+                <div class="ore-name">${displayName}</div>
+            `;
+
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                performClick(ore);
+            });
+
+            field.appendChild(el);
+        }
+
+        function updateOreDisplay(ore) {
+            const el = document.getElementById(ore.id);
+            if (!el) return;
+            const oreType = oreTypes[ore.typeIndex];
+            const hpPercent = Math.max(0, (ore.hp / oreType.maxHp) * 100);
+            const fill = el.querySelector('.ore-hp-fill');
+            if (fill) fill.style.width = hpPercent + '%';
+        }
+
+        function breakOre(ore) {
+            const oreType = oreTypes[ore.typeIndex];
+
+            // 報酬（レアバリアントは10倍、資源ボーナス適用）
+            const comboBonus = 1 + getComboBonus();
+            const rareMultiplier = ore.isRareVariant ? 10 : 1;
+            const reward = Math.floor(oreType.reward * comboBonus * rareMultiplier * getRewardBonus());
+            state.resources += reward;
+            state.totalResources += reward;
+            state.stats.totalBroken++;
+            state.stats.totalResourcesGained += reward;
+            state.stats.oreBroken[oreType.id] = (state.stats.oreBroken[oreType.id] || 0) + 1;
+
+            // 獲得資源ポップアップ表示
+            showRewardPopup(ore, reward);
+
+            // 経験値
+            gainExp(oreType.exp);
+
+            // 石炭特殊効果
+            if (oreType.special === 'energy') {
+                state.energy = Math.min(state.maxEnergy, state.energy + 5);
+            }
+
+            // エネルギー回復
+            state.energy = Math.min(state.maxEnergy, state.energy + (oreType.isRare ? 10 : 2));
+
+            // コンボ
+            const now = Date.now();
+            if (now - state.lastBreakTime < 2000 && state.lastBreakTime > 0) {
+                state.combo++;
+            } else {
+                state.combo = 1;
+            }
+            state.lastBreakTime = now;
+            state.stats.maxCombo = Math.max(state.stats.maxCombo, state.combo);
+
+            // フォーカスターゲットが壊れた場合、次を選択
+            const wasFocused = (ore.id === state.focusTargetId);
+
+            // DOM削除
+            const el = document.getElementById(ore.id);
+            if (el) el.remove();
+
+            // 配列から削除
+            const idx = state.field.ores.indexOf(ore);
+            if (idx >= 0) state.field.ores.splice(idx, 1);
+
+            // フォーカスが壊れたら次のターゲットを自動選択
+            if (wasFocused) {
+                selectNextFocusTarget();
+            }
+
+            // フィールド拡張チェック
+            checkSlotUnlock();
+
+            // 新しい鉱石を追加
+            setTimeout(() => spawnOre(), 300);
+        }
+
+        function checkSlotUnlock() {
+            // 累計資源に応じてスロット増加 + アップグレード分
+            const thresholds = [200, 1000, 5000, 20000];
+            let baseSlots = 4;
+            thresholds.forEach(t => {
+                if (state.totalResources >= t) baseSlots++;
+            });
+            const slotLv = state.upgrades['ore_slots'] || 0;
+            state.field.slots = Math.min(12, baseSlots + slotLv);
+        }
+
+        function showDamagePopup(ore, damage, isCrit) {
+            const field = document.getElementById('mine-field');
+            const popup = document.createElement('div');
+            popup.className = 'damage-popup' + (isCrit ? ' crit' : '');
+            popup.textContent = '-' + fmt(damage);
+            popup.style.left = (ore.x + 20 + Math.random() * 20) + 'px';
+            popup.style.top = (ore.y + 10) + 'px';
+            field.appendChild(popup);
+            setTimeout(() => popup.remove(), 700);
+
+            // 鉱石のHP表示更新
+            updateOreDisplay(ore);
+        }
+
+        function showRewardPopup(ore, reward) {
+            const field = document.getElementById('mine-field');
+            const popup = document.createElement('div');
+            popup.className = 'reward-popup' + (ore.isRareVariant ? ' rare-reward' : '');
+            popup.textContent = '+' + fmt(reward) + '💎';
+            popup.style.left = (ore.x + 10 + Math.random() * 10) + 'px';
+            popup.style.top = (ore.y + 30) + 'px';
+            field.appendChild(popup);
+            setTimeout(() => popup.remove(), 1000);
+        }
+
+        // ピッケルアニメーション
+        let pickaxeCount = 0;
+        let lastPickaxeTime = 0;
+
+        function spawnPickaxeEffect() {
+            if (pickaxeCount >= 3) return;
+            if (!state.focusTargetId) return;
+            if (getTotalDps() <= 0) return;
+
+            const focusOre = state.field.ores.find(o => o.id === state.focusTargetId);
+            if (!focusOre) return;
+
+            const field = document.getElementById('mine-field');
+            const pickaxe = document.createElement('div');
+            pickaxe.className = 'pickaxe-anim';
+            pickaxe.textContent = '⛏️';
+
+            // ランダムな方向から飛んでくる
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 60 + Math.random() * 40;
+            const startX = focusOre.x + 24 + Math.cos(angle) * dist;
+            const startY = focusOre.y + 24 + Math.sin(angle) * dist;
+            const tx = (focusOre.x + 24 - startX);
+            const ty = (focusOre.y + 24 - startY);
+
+            pickaxe.style.left = startX + 'px';
+            pickaxe.style.top = startY + 'px';
+            pickaxe.style.setProperty('--tx', tx + 'px');
+            pickaxe.style.setProperty('--ty', ty + 'px');
+
+            field.appendChild(pickaxe);
+            pickaxeCount++;
+
+            setTimeout(() => {
+                pickaxe.remove();
+                pickaxeCount--;
+            }, 600);
+        }
+
+        function handleFieldClick(event) {
+            // フィールドの空白クリック - 何もしない
+        }
+
+        // ========================================
+        // レベルシステム
+        // ========================================
+        function gainExp(amount) {
+            state.exp += amount;
+            while (state.exp >= state.expToNext) {
+                state.exp -= state.expToNext;
+                state.level++;
+                state.expToNext = Math.floor(10 * Math.pow(1.5, state.level - 1));
+                applyUpgradeEffects();
+                showLevelUp();
+            }
+        }
+
+        function showLevelUp() {
+            const toast = document.createElement('div');
+            toast.className = 'levelup-toast';
+            toast.textContent = `⬆ LEVEL ${state.level}!`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 1200);
+        }
+
+        // ========================================
+        // スキルシステム
+        // ========================================
+        function useSkill(skillId) {
+            const skill = skillTypes.find(s => s.id === skillId);
+            const sState = state.skills[skillId];
+
+            if (state.totalResources < skill.unlockAt) return;
+            if (sState.cooldown > 0) return;
+            if (state.energy < skill.energyCost) return;
+
+            state.energy -= skill.energyCost;
+            sState.cooldown = skill.cooldown;
+
+            switch (skillId) {
+                case 'multi_strike':
+                    state.activeEffects.multiStrike = true;
+                    sState.activeUntil = Date.now() + skill.duration;
+                    setTimeout(() => { state.activeEffects.multiStrike = false; }, skill.duration);
+                    break;
+                case 'shatter':
+                    state.field.ores.forEach(ore => {
+                        const dmg = Math.ceil(ore.hp * 0.25);
+                        ore.hp -= dmg;
+                        showDamagePopup(ore, dmg, false);
+                        if (ore.hp <= 0) setTimeout(() => breakOre(ore), 50);
+                    });
+                    break;
+                case 'golden_eye':
+                    state.activeEffects.goldenEye = true;
+                    state.activeEffects.rareBonus = 3;
+                    sState.activeUntil = Date.now() + skill.duration;
+                    setTimeout(() => {
+                        state.activeEffects.goldenEye = false;
+                        state.activeEffects.rareBonus = 1;
+                    }, skill.duration);
+                    break;
+                case 'frenzy':
+                    state.activeEffects.frenzy = true;
+                    state.activeEffects.dpsMultiplier = 5;
+                    sState.activeUntil = Date.now() + skill.duration;
+                    setTimeout(() => {
+                        state.activeEffects.frenzy = false;
+                        state.activeEffects.dpsMultiplier = 1;
+                    }, skill.duration);
+                    break;
+                case 'instant_kill':
+                    if (state.field.ores.length > 0) {
+                        const target = state.field.ores[Math.floor(Math.random() * state.field.ores.length)];
+                        breakOre(target);
+                    }
+                    break;
+            }
+            renderSkills();
+            updateDisplay();
+        }
+
+        // ========================================
+        // 施設購入
+        // ========================================
+        function buyBuilding(buildingId) {
+            const building = buildings.find(b => b.id === buildingId);
+            const owned = state.buildings[buildingId];
+            if (owned >= 50) return; // 最大50個まで
+            const cost = getBuildingCost(building);
+            if (state.resources >= cost && state.totalResources >= building.unlockAt) {
+                state.resources -= cost;
+                state.buildings[buildingId]++;
+                renderSidebar();
+                updateDisplay();
+            }
+        }
+
+        // ========================================
+        // アップグレード購入（レベル制）
+        // ========================================
+        function getUpgradeCost(upg) {
+            const level = state.upgrades[upg.id] || 0;
+            return Math.ceil(upg.baseCost * Math.pow(upg.costMult, level));
+        }
+
+        function buyUpgrade(upgradeId) {
+            const upg = attackUpgrades.find(u => u.id === upgradeId) || oreUpgrades.find(u => u.id === upgradeId);
+            if (!upg) return;
+
+            const level = state.upgrades[upg.id] || 0;
+            if (upg.maxLevel && level >= upg.maxLevel) return;
+            if (state.totalResources < upg.unlockAt) return;
+
+            const cost = getUpgradeCost(upg);
+            if (state.resources < cost) return;
+
+            state.resources -= cost;
+            state.upgrades[upg.id] = level + 1;
+
+            // 効果適用
+            applyUpgradeEffects();
+
+            renderSidebar();
+            updateDisplay();
+        }
+
+        function applyUpgradeEffects() {
+            // 攻撃強化
+            const clickLv = state.upgrades['click_power'] || 0;
+            const pClickLv = state.prestige.skills['p_click'] || 0;
+            state.baseClickDamage = 1 + (state.level - 1) * 0.5 + clickLv + pClickLv * 2;
+
+            const critLv = state.upgrades['crit_chance'] || 0;
+            const pCritLv = state.prestige.skills['p_crit'] || 0;
+            state.critChance = critLv * 2 + pCritLv * 3;
+
+            const critMultLv = state.upgrades['crit_mult'] || 0;
+            state.critMultiplier = 2.0 + critMultLv * 0.5;
+
+            const energyLv = state.upgrades['energy_cap'] || 0;
+            state.maxEnergy = 100 + energyLv * 20;
+
+            // 鉱石スロット更新
+            checkSlotUnlock();
+        }
+
+        function getPrestigeDpsMult() {
+            const pDpsLv = state.prestige.skills['p_dps'] || 0;
+            return 1 + pDpsLv * 0.10;
+        }
+
+        function getRareVariantChance() {
+            const rareLv = state.upgrades['rare_chance'] || 0;
+            const pRareLv = state.prestige.skills['p_rare'] || 0;
+            return 0.03 + rareLv * 0.01 + pRareLv * 0.02;
+        }
+
+        function getHighTierBonus() {
+            const htLv = state.upgrades['high_tier'] || 0;
+            return htLv * 5; // パーセント
+        }
+
+        function getRewardBonus() {
+            const rbLv = state.upgrades['reward_bonus'] || 0;
+            const pRewardLv = state.prestige.skills['p_reward'] || 0;
+            return 1 + rbLv * 0.10 + pRewardLv * 0.15;
+        }
+
+        // ========================================
+        // 転生システム
+        // ========================================
+        function calculatePrestigePoints() {
+            // 統計データからポイント計算
+            const brokenPts = Math.floor(state.stats.totalBroken / 100);
+            const resPts = Math.floor(Math.log10(Math.max(1, state.stats.totalResourcesGained)) * 2);
+            const dmgPts = Math.floor(Math.log10(Math.max(1, state.stats.maxDamage)) * 3);
+            const comboPts = Math.floor(state.stats.maxCombo / 10);
+            return Math.max(0, brokenPts + resPts + dmgPts + comboPts);
+        }
+
+        function canPrestige() {
+            // 累計資源1万以上で転生可能
+            return state.totalResources >= 10000;
+        }
+
+        function getPrestigeSkillCost(skill) {
+            const level = state.prestige.skills[skill.id] || 0;
+            return Math.ceil(skill.costBase * Math.pow(skill.costMult, level));
+        }
+
+        function buyPrestigeSkill(skillId) {
+            const skill = prestigeSkills.find(s => s.id === skillId);
+            if (!skill) return;
+            const level = state.prestige.skills[skill.id] || 0;
+            if (skill.maxLevel && level >= skill.maxLevel) return;
+            const cost = getPrestigeSkillCost(skill);
+            if (state.prestige.points < cost) return;
+
+            state.prestige.points -= cost;
+            state.prestige.skills[skill.id] = level + 1;
+            applyUpgradeEffects();
+            showModal('prestige');
+        }
+
+        function doPrestige() {
+            const pts = calculatePrestigePoints();
+            if (pts <= 0 || !canPrestige()) return;
+            if (!confirm(`転生しますか？\n獲得ポイント: ${pts}P\n全ての進行状況がリセットされます。`)) return;
+
+            // ポイント付与
+            state.prestige.points += pts;
+            state.prestige.totalPoints += pts;
+            state.prestige.count++;
+
+            // 初期資源ボーナス計算
+            const pStartLv = state.prestige.skills['p_start'] || 0;
+            const startBonus = pStartLv * 100;
+
+            // リセット
+            state.resources = startBonus;
+            state.totalResources = 0;
+            state.level = 1;
+            state.exp = 0;
+            state.expToNext = 10;
+            state.baseClickDamage = 1;
+            state.critChance = 0;
+            state.critMultiplier = 2.0;
+            state.energy = 100;
+            state.maxEnergy = 100;
+            state.combo = 0;
+            state.lastBreakTime = 0;
+            state.focusTargetId = null;
+            state.field.slots = 4;
+            state.field.ores = [];
+            buildings.forEach(b => state.buildings[b.id] = 0);
+            state.upgrades = {};
+            state.activeEffects = { multiStrike: false, frenzy: false, goldenEye: false, rareBonus: 1, dpsMultiplier: 1 };
+            skillTypes.forEach(s => state.skills[s.id] = { cooldown: 0, activeUntil: 0 });
+            state.stats = { totalClicks: 0, totalBroken: 0, maxCombo: 0, maxDamage: 0, totalResourcesGained: 0, oreBroken: {} };
+
+            // 転生スキル効果を再適用
+            applyUpgradeEffects();
+
+            // フィールドクリア＆再生成
+            document.getElementById('mine-field').innerHTML = '';
+            for (let i = 0; i < state.field.slots; i++) {
+                spawnOre();
+            }
+
+            saveGame();
+            closeModal();
+            renderSidebar();
+            renderSkills();
+            updateDisplay();
+        }
+
+        // ========================================
+        // タブ切り替え
+        // ========================================
+        function switchTab(tab, el) {
+            currentTab = tab;
+            document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+            if (el) el.classList.add('active');
+            renderSidebar();
+        }
+
+        // ========================================
+        // サイドバー描画
+        // ========================================
+        function renderSidebar() {
+            const container = document.getElementById('sidebar-content');
+
+            if (currentTab === 'buildings') {
+                container.innerHTML = buildings.map(b => {
+                    const cost = getBuildingCost(b);
+                    const owned = state.buildings[b.id];
+                    const dps = getBuildingDps(b);
+                    const unlocked = state.totalResources >= b.unlockAt;
+                    const atMax = owned >= 50;
+                    const canAfford = unlocked && !atMax && state.resources >= cost;
+                    const notAfford = unlocked && !atMax && !canAfford;
+
+                    let cls = 'building-item';
+                    if (canAfford) cls += ' can-afford';
+                    else if (notAfford) cls += ' not-afford';
+                    else if (!unlocked) cls += ' locked';
+
+                    return `
+                        <div class="${cls}"
+                             onclick="${unlocked && !atMax ? `buyBuilding('${b.id}')` : ''}">
+                            <div class="building-sprite" style="${unlocked ? getSpriteStyle(b.sprite) : ''}"></div>
+                            <div class="building-info">
+                                <div class="building-name">${unlocked ? b.name : '???'}</div>
+                                <div class="building-detail">${unlocked ? (dps > 0 ? fmt(dps) + ' DPS' : b.baseDps + ' DPS/個') : '累計' + fmt(b.unlockAt) + 'で解放'}</div>
+                            </div>
+                            <div class="building-cost">${atMax ? '✅MAX' : (unlocked ? '💎' + fmt(cost) : '🔒')}</div>
+                            ${owned > 0 ? `<div class="building-count">x${owned}${atMax ? '/50' : ''}</div>` : ''}
+                        </div>
+                    `;
+                }).join('');
+            } else if (currentTab === 'upgrades') {
+                container.innerHTML = renderUpgradeList(attackUpgrades);
+            } else if (currentTab === 'ore_upgrades') {
+                container.innerHTML = renderUpgradeList(oreUpgrades);
+            }
+        }
+
+        function renderUpgradeList(upgrades) {
+            return upgrades.map(u => {
+                const level = state.upgrades[u.id] || 0;
+                const unlocked = state.totalResources >= u.unlockAt;
+                const atMax = u.maxLevel && level >= u.maxLevel;
+                const cost = getUpgradeCost(u);
+                const canAfford = unlocked && !atMax && state.resources >= cost;
+                const notAfford = unlocked && !atMax && !canAfford;
+
+                let cls = 'building-item';
+                if (canAfford) cls += ' can-afford';
+                else if (notAfford) cls += ' not-afford';
+                else if (!unlocked) cls += ' locked';
+
+                const descText = u.desc.replace('{val}', u.valuePerLv);
+                const levelText = atMax ? 'MAX' : 'Lv.' + level;
+
+                return `
+                    <div class="${cls}"
+                         onclick="${canAfford ? `buyUpgrade('${u.id}')` : ''}">
+                        <div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">
+                            ${u.emoji}
+                        </div>
+                        <div class="building-info">
+                            <div class="building-name">${unlocked ? u.name : '???'}</div>
+                            <div class="building-detail">${unlocked ? descText : '累計' + fmt(u.unlockAt) + 'で解放'}</div>
+                        </div>
+                        <div class="building-cost">${atMax ? '✅MAX' : (unlocked ? '💎' + fmt(cost) : '🔒')}</div>
+                        ${unlocked ? `<div class="building-count">${levelText}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ========================================
+        // スキルバー描画
+        // ========================================
+        function renderSkills() {
+            const container = document.getElementById('skill-buttons');
+            container.innerHTML = skillTypes.map(skill => {
+                const sState = state.skills[skill.id];
+                const unlocked = state.totalResources >= skill.unlockAt;
+                const onCooldown = sState.cooldown > 0;
+                const isActive = sState.activeUntil > Date.now();
+                const canUse = unlocked && !onCooldown && state.energy >= skill.energyCost;
+
+                let cls = 'skill-btn';
+                if (!unlocked) cls += ' locked';
+                else if (isActive) cls += ' active';
+                else if (canUse) cls += ' ready';
+                else if (onCooldown) cls += ' cooldown';
+
+                let overlay = '';
+                if (onCooldown && unlocked) {
+                    overlay = `<div class="cd-overlay">${Math.ceil(sState.cooldown / 1000)}s</div>`;
+                }
+
+                return `
+                    <button class="${cls}" onclick="useSkill('${skill.id}')" title="${skill.name}: ${skill.desc}">
+                        ${skill.emoji}
+                        ${overlay}
+                    </button>
+                `;
+            }).join('');
+        }
+
+        // ========================================
+        // 表示更新
+        // ========================================
+        function updateDisplay() {
+            document.getElementById('res-display').textContent = fmt(state.resources);
+            document.getElementById('energy-display').textContent = Math.floor(state.energy) + '/' + state.maxEnergy;
+            document.getElementById('level-display').textContent = state.level;
+            document.getElementById('exp-fill').style.width = (state.exp / state.expToNext * 100) + '%';
+            document.getElementById('exp-text').textContent = fmt(state.exp) + '/' + fmt(state.expToNext);
+            document.getElementById('dps-display').textContent = fmt(getTotalDps());
+            document.getElementById('power-display').textContent = fmt(getClickDamage());
+
+            // コンボ
+            const comboEl = document.getElementById('combo-display');
+            if (state.combo >= 5) {
+                comboEl.textContent = `x${state.combo} ${getComboLabel()}`;
+                comboEl.style.color = getComboColor();
+            } else if (state.combo > 0) {
+                comboEl.textContent = `x${state.combo}`;
+                comboEl.style.color = '#888';
+            } else {
+                comboEl.textContent = '';
+            }
+        }
+
+        // ========================================
+        // モーダル
+        // ========================================
+        function showModal(type) {
+            const overlay = document.getElementById('modal-overlay');
+            const content = document.getElementById('modal-content');
+            overlay.classList.add('show');
+
+            if (type === 'stats') {
+                // 鉱石別破壊数
+                let oreStatsHtml = '';
+                oreTypes.forEach(o => {
+                    const count = state.stats.oreBroken[o.id] || 0;
+                    if (count > 0) {
+                        oreStatsHtml += `<p style="font-size:12px;color:#aaa;margin:2px 0;">　${o.name}: ${fmt(count)}個</p>`;
+                    }
+                });
+
+                content.innerHTML = `
+                    <button class="modal-close" onclick="closeModal()">&times;</button>
+                    <h3>📊 統計</h3>
+                    <p>累計資源: ${fmt(state.totalResources)}</p>
+                    <p>総獲得資源: ${fmt(state.stats.totalResourcesGained)}</p>
+                    <p>レベル: ${state.level}</p>
+                    <p>総クリック: ${fmt(state.stats.totalClicks)}</p>
+                    <p>破壊数: ${fmt(state.stats.totalBroken)}</p>
+                    <p>最大ダメージ: ${fmt(state.stats.maxDamage)}</p>
+                    <p>最大コンボ: ${state.stats.maxCombo}</p>
+                    <p>総DPS: ${fmt(getTotalDps())}/s</p>
+                    <p>クリック力: ${fmt(getClickDamage())}</p>
+                    <p>クリ率: ${state.critChance}%</p>
+                    <p>クリ倍率: x${state.critMultiplier.toFixed(1)}</p>
+                    <p>転生回数: ${state.prestige.count}</p>
+                    <hr style="border-color:#333;margin:8px 0;">
+                    <p style="font-weight:bold;color:#ffd700;">鉱石別破壊数:</p>
+                    ${oreStatsHtml || '<p style="font-size:12px;color:#666;">まだ鉱石を破壊していません</p>'}
+                `;
+            } else if (type === 'prestige') {
+                const pts = calculatePrestigePoints();
+                const canDo = canPrestige();
+
+                let skillsHtml = prestigeSkills.map(s => {
+                    const lv = state.prestige.skills[s.id] || 0;
+                    const atMax = s.maxLevel && lv >= s.maxLevel;
+                    const cost = getPrestigeSkillCost(s);
+                    const canBuy = !atMax && state.prestige.points >= cost;
+                    const desc = s.desc.replace('{val}', s.valuePerLv);
+
+                    return `
+                        <div class="building-item ${canBuy ? 'can-afford' : (atMax ? '' : 'not-afford')}"
+                             onclick="${canBuy ? `buyPrestigeSkill('${s.id}')` : ''}"
+                             style="cursor:${canBuy ? 'pointer' : 'default'}">
+                            <div style="width:30px;text-align:center;font-size:18px;">${s.emoji}</div>
+                            <div class="building-info">
+                                <div class="building-name">${s.name}</div>
+                                <div class="building-detail">${desc}</div>
+                            </div>
+                            <div class="building-cost" style="color:${canBuy ? '#9b59b6' : '#666'}">
+                                ${atMax ? '✅MAX' : cost + 'P'}
+                            </div>
+                            <div class="building-count">Lv.${lv}</div>
+                        </div>
+                    `;
+                }).join('');
+
+                content.innerHTML = `
+                    <button class="modal-close" onclick="closeModal()">&times;</button>
+                    <h3>🔄 転生</h3>
+                    <p>転生回数: ${state.prestige.count}回</p>
+                    <p>所持ポイント: <span style="color:#9b59b6;font-weight:bold;">${state.prestige.points}P</span></p>
+                    <p>累計ポイント: ${state.prestige.totalPoints}P</p>
+                    <hr style="border-color:#333;margin:8px 0;">
+                    <p style="font-size:12px;color:#aaa;">転生すると全ての進行がリセットされ、統計に応じたポイントを獲得できます。</p>
+                    <p>次回獲得ポイント: <span style="color:#ffd700;font-weight:bold;">${pts}P</span></p>
+                    <button class="modal-btn" ${canDo ? '' : 'disabled'}
+                            style="background:${canDo ? '#9b59b6' : '#555'};color:#fff;width:100%;margin:8px 0;"
+                            onclick="doPrestige()">
+                        ${canDo ? '🔄 転生する (+' + pts + 'P)' : '🔒 累計1万資源で解放'}
+                    </button>
+                    <hr style="border-color:#333;margin:8px 0;">
+                    <p style="font-weight:bold;color:#9b59b6;">永続スキル:</p>
+                    ${skillsHtml}
+                `;
+            } else if (type === 'settings') {
+                content.innerHTML = `
+                    <button class="modal-close" onclick="closeModal()">&times;</button>
+                    <h3>⚙ 設定</h3>
+                    <p>
+                        <button class="modal-btn" onclick="saveGame();closeModal();">💾 手動セーブ</button>
+                    </p>
+                    <p>
+                        <button class="modal-btn" onclick="exportSave()">📤 エクスポート</button>
+                    </p>
+                    <p>
+                        <button class="modal-btn" onclick="importSave()">📥 インポート</button>
+                    </p>
+                    <p>
+                        <button class="modal-btn" style="background:#e74c3c;color:#fff;" onclick="resetGame()">🔄 リセット</button>
+                    </p>
+                `;
+            }
+        }
+
+        function closeModal(event) {
+            if (event && event.target !== document.getElementById('modal-overlay')) return;
+            document.getElementById('modal-overlay').classList.remove('show');
+        }
+
+        // ========================================
+        // セーブ/ロード
+        // ========================================
+        function saveGame() {
+            try {
+                const saveData = {
+                    version: '3.0',
+                    timestamp: Date.now(),
+                    state: {
+                        resources: state.resources,
+                        totalResources: state.totalResources,
+                        level: state.level,
+                        exp: state.exp,
+                        expToNext: state.expToNext,
+                        baseClickDamage: state.baseClickDamage,
+                        critChance: state.critChance,
+                        critMultiplier: state.critMultiplier,
+                        energy: state.energy,
+                        energyRegen: state.energyRegen,
+                        combo: state.combo,
+                        field: { slots: state.field.slots },
+                        buildings: state.buildings,
+                        upgrades: state.upgrades,
+                        stats: state.stats,
+                        prestige: state.prestige
+                    }
+                };
+                localStorage.setItem('oreBreaker_v2', JSON.stringify(saveData));
+            } catch (e) { console.error('Save failed', e); }
+        }
+
+        function loadGame() {
+            try {
+                const data = localStorage.getItem('oreBreaker_v2');
+                if (!data) return false;
+                const save = JSON.parse(data);
+                const s = save.state;
+
+                state.resources = s.resources || 0;
+                state.totalResources = s.totalResources || 0;
+                state.level = s.level || 1;
+                state.exp = s.exp || 0;
+                state.expToNext = s.expToNext || 10;
+                state.baseClickDamage = s.baseClickDamage || 1;
+                state.critChance = s.critChance || 0;
+                state.critMultiplier = s.critMultiplier || 2.0;
+                state.energy = s.energy || 100;
+                state.energyRegen = s.energyRegen || 2;
+                if (s.field) state.field.slots = s.field.slots || 4;
+                if (s.buildings) Object.assign(state.buildings, s.buildings);
+                if (s.upgrades) Object.assign(state.upgrades, s.upgrades);
+                if (s.stats) {
+                    Object.assign(state.stats, s.stats);
+                    if (!state.stats.oreBroken) state.stats.oreBroken = {};
+                    if (!state.stats.maxDamage) state.stats.maxDamage = 0;
+                    if (!state.stats.totalResourcesGained) state.stats.totalResourcesGained = 0;
+                }
+                if (s.prestige) Object.assign(state.prestige, s.prestige);
+                if (!state.prestige.skills) state.prestige.skills = {};
+
+                // アップグレード効果を再計算
+                applyUpgradeEffects();
+
+                // オフライン報酬計算
+                if (save.timestamp) {
+                    calculateOfflineReward(save.timestamp);
+                }
+
+                return true;
+            } catch (e) { console.error('Load failed', e); return false; }
+        }
+
+        // ========================================
+        // オフライン報酬
+        // ========================================
+        function calculateOfflineReward(lastSaveTime) {
+            const now = Date.now();
+            const elapsedSec = (now - lastSaveTime) / 1000;
+
+            // 最低30秒以上離れていないと報酬なし
+            if (elapsedSec < 30) return;
+
+            // 最大24時間分まで
+            const cappedSec = Math.min(elapsedSec, 86400);
+
+            const dps = getTotalDps();
+            if (dps <= 0) return;
+
+            // オフライン効率: DPSの20%を資源として付与
+            const offlineEfficiency = 0.20;
+            const reward = Math.floor(dps * cappedSec * offlineEfficiency);
+            if (reward <= 0) return;
+
+            state.resources += reward;
+            state.totalResources += reward;
+            state.stats.totalResourcesGained += reward;
+
+            // 経過時間を読みやすく
+            let timeStr = '';
+            if (cappedSec >= 3600) {
+                timeStr = Math.floor(cappedSec / 3600) + '時間' + Math.floor((cappedSec % 3600) / 60) + '分';
+            } else if (cappedSec >= 60) {
+                timeStr = Math.floor(cappedSec / 60) + '分';
+            } else {
+                timeStr = Math.floor(cappedSec) + '秒';
+            }
+
+            // 報酬通知表示
+            setTimeout(() => {
+                showOfflineRewardNotice(timeStr, reward);
+            }, 500);
+        }
+
+        function showOfflineRewardNotice(timeStr, reward) {
+            const overlay = document.getElementById('modal-overlay');
+            const content = document.getElementById('modal-content');
+            overlay.classList.add('show');
+            content.innerHTML = `
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+                <h3>🌙 おかえりなさい！</h3>
+                <p>離席時間: ${timeStr}</p>
+                <p style="font-size:18px;color:#4ecca3;font-weight:bold;margin:12px 0;">
+                    +${fmt(reward)} 💎 資源を獲得！
+                </p>
+                <p style="font-size:11px;color:#888;">(DPSの20%がオフライン報酬として付与されます)</p>
+                <button class="modal-btn" onclick="closeModal()" style="width:100%;margin-top:10px;">OK</button>
+            `;
+        }
+
+        function resetGame() {
+            if (confirm('全データをリセットしますか？')) {
+                localStorage.removeItem('oreBreaker_v2');
+                location.reload();
+            }
+        }
+
+        function exportSave() {
+            const data = localStorage.getItem('oreBreaker_v2');
+            if (!data) { alert('データなし'); return; }
+            navigator.clipboard.writeText(btoa(data)).then(() => alert('コピーしました'));
+        }
+
+        function importSave() {
+            const input = prompt('セーブデータを貼り付け:');
+            if (!input) return;
+            try {
+                localStorage.setItem('oreBreaker_v2', atob(input));
+                location.reload();
+            } catch (e) { alert('無効なデータ'); }
+        }
+
+        // ========================================
+        // ゲームループ
+        // ========================================
+        let lastTick = Date.now();
+
+        function gameTick() {
+            const now = Date.now();
+            const dt = (now - lastTick) / 1000;
+            lastTick = now;
+
+            // エネルギー回復
+            state.energy = Math.min(state.maxEnergy, state.energy + state.energyRegen * dt);
+
+            // DPSダメージ（フォーカスターゲットに集中）
+            const totalDps = getTotalDps();
+            if (totalDps > 0 && state.field.ores.length > 0) {
+                // フォーカスターゲットがなければ自動選択
+                if (!state.focusTargetId) {
+                    selectNextFocusTarget();
+                }
+                const focusOre = state.field.ores.find(o => o.id === state.focusTargetId);
+                if (focusOre) {
+                    focusOre.hp -= totalDps * dt;
+                    updateOreDisplay(focusOre);
+                    if (focusOre.hp <= 0) breakOre(focusOre);
+                }
+            }
+
+            // コンボタイマー
+            if (state.combo > 0 && now - state.lastBreakTime > 2000) {
+                state.combo = 0;
+            }
+
+            // スキルクールダウン
+            skillTypes.forEach(skill => {
+                if (state.skills[skill.id].cooldown > 0) {
+                    state.skills[skill.id].cooldown -= dt * 1000;
+                    if (state.skills[skill.id].cooldown < 0) state.skills[skill.id].cooldown = 0;
+                }
+            });
+
+            // ピッケルエフェクト（約800msごと）
+            if (totalDps > 0 && now - lastPickaxeTime > 800) {
+                spawnPickaxeEffect();
+                lastPickaxeTime = now;
+            }
+
+            // 鉱石補充
+            while (state.field.ores.length < state.field.slots) {
+                spawnOre();
+            }
+
+            updateDisplay();
+            renderSkills();
+            renderSidebar();
+        }
+
+        // ========================================
+        // 初期化
+        // ========================================
+        function init() {
+            loadGame();
+
+            // 初期鉱石配置
+            for (let i = 0; i < state.field.slots; i++) {
+                spawnOre();
+            }
+
+            renderSidebar();
+            renderSkills();
+            updateDisplay();
+
+            // ゲームループ (200ms間隔)
+            setInterval(gameTick, 200);
+
+            // オートセーブ (30秒)
+            setInterval(saveGame, 30000);
+        }
+
+        // ページ読み込み完了後に初期化
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
