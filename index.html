@@ -514,6 +514,23 @@
             100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
         }
 
+        .dex-toast {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            background: linear-gradient(135deg, #4ecca3, #2ecc71);
+            color: #000;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: bold;
+            z-index: 2000;
+            animation: toastIn 1.8s ease-out forwards;
+            box-shadow: 0 0 25px rgba(78,204,163,0.5);
+            text-align: center;
+        }
+
         /* ツールチップ */
         .tooltip-box {
             position: fixed;
@@ -1140,8 +1157,31 @@
         }
 
         function onBossDefeated(bossId) {
-            // 図鑑: ボス撃破記録
-            state.dex.bosses.defeated[bossId] = (state.dex.bosses.defeated[bossId] || 0) + 1;
+            const prev = state.dex.bosses.defeated[bossId] || 0;
+            state.dex.bosses.defeated[bossId] = prev + 1;
+            // 初回撃破報酬
+            if (prev === 0) {
+                const bossData = state.boss.current;
+                const firstReward = bossData.firstReward || Math.floor(bossData.reward * 0.5);
+                grantFirstDefeatReward(bossData.name, firstReward);
+            }
+        }
+
+        // 初回撃破報酬の付与（鉱石・ボス共通）
+        // firstReward はデータに定義があればそれを使い、なければ自動計算
+        function grantFirstDefeatReward(name, reward) {
+            state.resources += reward;
+            state.totalResources += reward;
+            state.stats.totalResourcesGained += reward;
+            showDexToast(name, reward);
+        }
+
+        function showDexToast(name, reward) {
+            const toast = document.createElement('div');
+            toast.className = 'dex-toast';
+            toast.innerHTML = `📖 初撃破: ${name}<br>+${fmt(reward)}💎`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 1800);
         }
 
         // ========================================
@@ -1271,9 +1311,14 @@
             state.stats.totalResourcesGained += reward;
             state.stats.oreBroken[oreType.id] = (state.stats.oreBroken[oreType.id] || 0) + 1;
 
-            // 図鑑: 撃破記録
+            // 図鑑: 撃破記録 + 初回撃破報酬
             if (!ore.isBoss) {
-                state.dex.ores.defeated[oreType.id] = (state.dex.ores.defeated[oreType.id] || 0) + 1;
+                const prev = state.dex.ores.defeated[oreType.id] || 0;
+                state.dex.ores.defeated[oreType.id] = prev + 1;
+                if (prev === 0) {
+                    const firstReward = oreType.firstReward || Math.floor(oreType.reward * 5);
+                    grantFirstDefeatReward(oreType.name, firstReward);
+                }
             }
 
             // 獲得資源ポップアップ表示
