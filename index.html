@@ -893,6 +893,12 @@
                 defeated: {}
             },
 
+            // 図鑑
+            dex: {
+                ores:   { seen: {}, defeated: {} },
+                bosses: { seen: {}, defeated: {} }
+            },
+
             // 転生データ
             prestige: {
                 count: 0,
@@ -1107,6 +1113,9 @@
             renderOre(ore);
             setFocusTarget(ore.id);
 
+            // 図鑑: ボス出現記録
+            state.dex.bosses.seen[bossData.id] = true;
+
             // ボスインジケーター表示
             const indicator = document.createElement('div');
             indicator.className = 'boss-indicator';
@@ -1131,8 +1140,8 @@
         }
 
         function onBossDefeated(bossId) {
-            // TODO: 図鑑（dex）登録処理をここに追加
-            console.log('ボス撃破:', bossId);
+            // 図鑑: ボス撃破記録
+            state.dex.bosses.defeated[bossId] = (state.dex.bosses.defeated[bossId] || 0) + 1;
         }
 
         // ========================================
@@ -1169,6 +1178,9 @@
 
             state.field.ores.push(ore);
             renderOre(ore);
+
+            // 図鑑: 出現記録
+            state.dex.ores.seen[oreTypes[oreType].id] = true;
 
             // フォーカスターゲットがなければ自動フォーカス
             if (!state.focusTargetId) {
@@ -1258,6 +1270,11 @@
             state.stats.totalBroken++;
             state.stats.totalResourcesGained += reward;
             state.stats.oreBroken[oreType.id] = (state.stats.oreBroken[oreType.id] || 0) + 1;
+
+            // 図鑑: 撃破記録
+            if (!ore.isBoss) {
+                state.dex.ores.defeated[oreType.id] = (state.dex.ores.defeated[oreType.id] || 0) + 1;
+            }
 
             // 獲得資源ポップアップ表示
             showRewardPopup(ore, reward);
@@ -1909,7 +1926,7 @@
         function saveGame() {
             try {
                 const saveData = {
-                    version: '3.0',
+                    version: '3.1',
                     timestamp: Date.now(),
                     state: {
                         resources: state.resources,
@@ -1931,6 +1948,7 @@
                         depthProgress: state.depthProgress,
                         depthTarget: state.depthTarget,
                         bossDefeated: state.boss.defeated,
+                        dex: state.dex,
                         prestige: state.prestige
                     }
                 };
@@ -1968,6 +1986,17 @@
                 if (s.depthProgress != null) state.depthProgress = s.depthProgress;
                 if (s.depthTarget) state.depthTarget = s.depthTarget;
                 if (s.bossDefeated) state.boss.defeated = s.bossDefeated;
+                // 図鑑: v3.1 マイグレーション（既存セーブに dex がなくても壊れない）
+                if (s.dex) {
+                    if (s.dex.ores) {
+                        if (s.dex.ores.seen) state.dex.ores.seen = s.dex.ores.seen;
+                        if (s.dex.ores.defeated) state.dex.ores.defeated = s.dex.ores.defeated;
+                    }
+                    if (s.dex.bosses) {
+                        if (s.dex.bosses.seen) state.dex.bosses.seen = s.dex.bosses.seen;
+                        if (s.dex.bosses.defeated) state.dex.bosses.defeated = s.dex.bosses.defeated;
+                    }
+                }
                 if (s.prestige) Object.assign(state.prestige, s.prestige);
                 if (!state.prestige.skills) state.prestige.skills = {};
 
