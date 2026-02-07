@@ -625,38 +625,68 @@
         // 個別画像パス定義
         // ========================================
         const SPRITE_IMAGES = {
-            player:       'output/character_girl1.png',
+            player:       'assets/sprites/characters/character_girl1.png',
             // 鉱石 (14種)
-            stone:        'output/stone1.png',
-            copper:       'output/copper.png',
-            iron:         'output/iron.png',
-            coal:         'output/coal.png',
-            silver:       'output/silver.png',
-            gold:         'output/gold.png',
-            aluminum:     'output/aluminum1.png',
-            crystal:      'output/crystal.png',
-            diamond:      'output/diamond.png',
-            meteorite:    'output/meteorite.png',
-            mithril:      'output/mithril.png',
-            orichalcum:   'output/orichalcum1.png',
-            darkmatter:   'output/dark_matter.png',
-            philosopher:  'output/philosophers_stone.png',
+            stone:        'assets/sprites/ores/stone.png',
+            copper:       'assets/sprites/ores/copper.png',
+            iron:         'assets/sprites/ores/iron.png',
+            coal:         'assets/sprites/ores/coal.png',
+            silver:       'assets/sprites/ores/silver.png',
+            gold:         'assets/sprites/ores/gold.png',
+            aluminum:     'assets/sprites/ores/aluminum.png',
+            crystal:      'assets/sprites/ores/crystal.png',
+            diamond:      'assets/sprites/ores/diamond.png',
+            meteorite:    'assets/sprites/ores/meteorite.png',
+            mithril:      'assets/sprites/ores/mithril.png',
+            orichalcum:   'assets/sprites/ores/orichalcum.png',
+            darkmatter:   'assets/sprites/ores/dark_matter.png',
+            philosopher:  'assets/sprites/ores/philosophers_stone.png',
             // 施設 (10種)
-            cursor:       'output/auto_clicker.png',
-            apprentice:   'output/apprentice_miner.png',
-            miner:        'output/expert_miner.png',
-            drill:        'output/rock_drill.png',
-            excavator:    'output/excavator.png',
-            mineshaft:    'output/mine.png',
-            golem:        'output/mining_golem.png',
-            dwarf_guild:  'output/dwarf_guild.png',
-            portal:       'output/dimensional_mining_portal.png',
-            singularity:  'output/singularity_miner.png'
+            cursor:       'assets/sprites/buildings/auto_clicker.png',
+            apprentice:   'assets/sprites/buildings/apprentice_miner.png',
+            miner:        'assets/sprites/buildings/expert_miner.png',
+            drill:        'assets/sprites/buildings/rock_drill.png',
+            excavator:    'assets/sprites/buildings/excavator.png',
+            mineshaft:    'assets/sprites/buildings/mine.png',
+            golem:        'assets/sprites/buildings/mining_golem.png',
+            dwarf_guild:  'assets/sprites/buildings/dwarf_guild.png',
+            portal:       'assets/sprites/buildings/dimensional_mining_portal.png',
+            singularity:  'assets/sprites/buildings/singularity_miner.png'
         };
+
+        // assets → output フォールバック用マッピング
+        const SPRITE_FALLBACKS = {
+            'assets/sprites/ores/stone.png':      'output/stone1.png',
+            'assets/sprites/ores/aluminum.png':    'output/aluminum1.png',
+            'assets/sprites/ores/orichalcum.png':  'output/orichalcum1.png'
+        };
+
+        // 画像存在チェックのキャッシュ（OK/NG を記録して2重リクエスト防止）
+        const _spriteCache = {};
 
         function getSpriteStyle(spriteId) {
             const path = SPRITE_IMAGES[spriteId];
             if (!path) return '';
+            // キャッシュ済みならそのパスを使う
+            if (_spriteCache[path]) {
+                return `background-image: url('${_spriteCache[path]}');`;
+            }
+            // まだ検証していない場合は assets パスを返しつつ、バックグラウンドで検証
+            const img = new Image();
+            img.onload = () => { _spriteCache[path] = path; };
+            img.onerror = () => {
+                // assets になければ fallback → 汎用 output パスを試行
+                const fb = SPRITE_FALLBACKS[path]
+                    || path.replace('assets/sprites/ores/', 'output/')
+                           .replace('assets/sprites/buildings/', 'output/')
+                           .replace('assets/sprites/characters/', 'output/');
+                _spriteCache[path] = fb;
+                // フォールバック適用済みの要素を再描画
+                document.querySelectorAll(`[data-sprite="${spriteId}"]`).forEach(el => {
+                    el.style.backgroundImage = `url('${fb}')`;
+                });
+            };
+            img.src = path;
             return `background-image: url('${path}');`;
         }
 
@@ -1017,7 +1047,7 @@
 
             const displayName = ore.isRareVariant ? '★' + oreType.name : oreType.name;
             el.innerHTML = `
-                <div class="ore-sprite" style="${getSpriteStyle(oreType.sprite)}"></div>
+                <div class="ore-sprite" data-sprite="${oreType.sprite}" style="${getSpriteStyle(oreType.sprite)}"></div>
                 <div class="ore-hp-bar"><div class="ore-hp-fill" style="width:${hpPercent}%"></div></div>
                 <div class="ore-name">${displayName}</div>
             `;
@@ -1466,7 +1496,7 @@
                     return `
                         <div class="${cls}"
                              onclick="${unlocked && !atMax ? `buyBuilding('${b.id}')` : ''}">
-                            <div class="building-sprite" style="${unlocked ? getSpriteStyle(b.sprite) : ''}"></div>
+                            <div class="building-sprite" data-sprite="${b.sprite}" style="${unlocked ? getSpriteStyle(b.sprite) : ''}"></div>
                             <div class="building-info">
                                 <div class="building-name">${unlocked ? b.name : '???'}</div>
                                 <div class="building-detail">${unlocked ? (dps > 0 ? fmt(dps) + ' DPS' : b.baseDps + ' DPS/個') : '累計' + fmt(b.unlockAt) + 'で解放'}</div>
